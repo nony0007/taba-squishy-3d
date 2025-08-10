@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Taba Squishy 3D</title>
+  <link rel="stylesheet" href="style.css"/>
+  <!-- Three.js from CDN -->
+  <script src="https://unpkg.com/three@0.157.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.157.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <div id="menu">
+    <h1>Taba Squishy</h1>
+    <button id="btnSolo">Solo</button>
+    <button id="btnMulti">Multiplayer</button>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div id="modeLabel">Mode: <span id="modeText">Solo</span></div>
+    <div id="coins">Coins: <span id="coinCount">0</span></div>
+    <div id="steps">
+      <button id="stepPaint">Paint Toe Beans</button>
+      <button id="stepDry">Leave It To Dry</button>
+      <button id="stepMix">Add Silicone Liquid + Silicone Liquid 2 & Mix</button>
+      <button id="stepPour">Pour Into Paw Mold</button>
+      <button id="stepSave" disabled>Save Taba Squishy</button>
+    </div>
+    <div id="actions">
+      <button id="playWith" disabled>Play With Current Squishy</button>
+      <button id="newRound" class="hidden">New Round</button>
+    </div>
+    <div id="status"></div>
+    <div id="inventoryWrap">
+      <h3>Inventory</h3>
+      <ul id="inventory"></ul>
+    </div>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <script>
+    const DEFAULT_WS = (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + ':3000/ws';
+    const WS_URL = new URLSearchParams(location.search).get('ws') || DEFAULT_WS;
+
+    const canvas = document.getElementById('game');
+    const menu = document.getElementById('menu');
+    const hud = document.getElementById('hud');
+    const modeText = document.getElementById('modeText');
+    const coinCountEl = document.getElementById('coinCount');
+    const statusEl = document.getElementById('status');
+
+    const btnSolo = document.getElementById('btnSolo');
+    const btnMulti = document.getElementById('btnMulti');
+    const stepPaint = document.getElementById('stepPaint');
+    const stepDry = document.getElementById('stepDry');
+    const stepMix = document.getElementById('stepMix');
+    const stepPour = document.getElementById('stepPour');
+    const stepSave = document.getElementById('stepSave');
+    const playWithBtn = document.getElementById('playWith');
+    const newRoundBtn = document.getElementById('newRound');
+    const inventoryList = document.getElementById('inventory');
+
+    // Basic state
+    let mode = 'Solo';
+    let coins = 0;
+    let currentSquishy = null;
+    let inventory = [];
+    let stepState = { painted:false, dried:false, mixed:false, poured:false };
+    let wobble = 0;
+    let ws = null;
+    let playerId = null;
+    let roomId = null;
+
+    // THREE setup
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+    const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
+    camera.position.set(3, 2, 4);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 1.0);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(5,5,5);
+    scene.add(dir);
+
+    // Ground
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshStandardMaterial({color:0x333333}));
+    ground.rotation.x = -Math.PI/2;
+    scene.add(ground);
+
+    // Simple "paw mold": a base + 1 big pad + 4 small pads
+    const moldGroup = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,0.1,32), new THREE.MeshStandardMaterial({color:0x555577, metalness:0.2, roughness:0.7}));
+    moldGroup.add(base);
+    function bean(r,x,y,color){
+      const geo = new THREE.SphereGeometry(r, 32, 16);
+      const mat = new THREE.MeshStandardMaterial({color:color||0x9999ff});
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, 0.25, y);
+      return m;
+    }
+    const bigPad = bean(0.55, 0, 0.1, 0x9999ff);
+    const toe1 = bean(0.25, -0.55, 0.55, 0x9999ff);
+    const toe2 = bean(0.25, -0.15, 0.75, 0x9999ff);
+    const toe3 = bean(0.25, 0.25, 0.75, 0x9999ff);
+    const toe4 = bean(0.25, 0.65, 0.55, 0x9999ff);
+    moldGroup.add(bigPad, toe1, toe2, toe3, toe4);
+    scene.add(moldGroup);
+
+    // Current squishy mesh (appears after pour)
+    const squishyGroup = new THREE.Group();
+    scene.add(squishyGroup);
+
+    function resizeRendererToDisplaySize(renderer){
+      const width = renderer.domElement.clientWidth;
+      const height = renderer.domElement.clientHeight;
+      const needResize = renderer.domElement.width !== width || renderer.domElement.height !== height;
+      if (needResize) renderer.setSize(width, height, false);
+      return needResize;
+    }
+
+    function randColor(){
+      const c = new THREE.Color().setHSL(Math.random(), 0.6, 0.6);
+      return c.getHex();
+    }
+
+    function setStatus(msg){
+      statusEl.textContent = msg || '';
+    }
+
+    function resetSteps(){
+      stepState = { painted:false, dried:false, mixed:false, poured:false };
+      stepSave.disabled = true;
+      playWithBtn.disabled = true;
+      setStatus('');
+      currentSquishy = null;
+      squishyGroup.clear();
+    }
+
+    function updateCoins(v){
+      coins = v;
+      coinCountEl.textContent = String(coins);
+    }
+
+    function paintToeBeans(){
+      [bigPad,toe1,toe2,toe3,toe4].forEach( m => m.material.color = new THREE.Color(randColor()) );
+      stepState.painted = true;
+      setStatus('Toe beans painted.');
+    }
+
+    function leaveToDry(){
+      if(!stepState.painted){ setStatus('Paint first.'); return; }
+      stepState.dried = true;
+      setStatus('Left to dry.');
+    }
+
+    function mixLiquids(){
+      if(!stepState.dried){ setStatus('Dry before mixing.'); return; }
+      stepState.mixed = true;
+      setStatus('Silicone Liquid + Silicone Liquid 2 mixed.');
+    }
+
+    function pourIntoMold(){
+      if(!stepState.mixed){ setStatus('Mix first.'); return; }
+      // Create a jelly-like paw (slightly bigger/glossy)
+      const mat = new THREE.MeshStandardMaterial({ color: randColor(), metalness:0.0, roughness:0.2, transparent:true, opacity:0.85 });
+      const g = new THREE.Group();
+      function jelly(r,x,y){
+        const geo = new THREE.SphereGeometry(r * (0.95 + Math.random()*0.1), 32, 16);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, 0.31, y);
+        g.add(m);
+      }
+      jelly(0.6, 0, 0.1);
+      jelly(0.28, -0.55, 0.55);
+      jelly(0.28, -0.15, 0.75);
+      jelly(0.28, 0.25, 0.75);
+      jelly(0.28, 0.65, 0.55);
+      squishyGroup.clear();
+      squishyGroup.add(g);
+      stepState.poured = true;
+      stepSave.disabled = false;
+      playWithBtn.disabled = false;
+      currentSquishy = {
+        color: mat.color.getHex(),
+        time: Date.now(),
+      };
+      setStatus('Poured into mold. You can save it.');
+    }
+
+    function saveSquishy(){
+      if(!currentSquishy){ setStatus('Make a squishy first.'); return; }
+      inventory.push(currentSquishy);
+      renderInventory();
+      setStatus('Taba squishy saved to inventory.');
+      // In multiplayer, submit to server for judging
+      if(mode === 'Multiplayer'){
+        sendWS({ type:'submit', squishy: currentSquishy, roomId });
+        newRoundBtn.classList.remove('hidden');
+      }
+    }
+
+    function renderInventory(){
+      inventoryList.innerHTML = '';
+      inventory.slice().reverse().forEach((s, idx) => {
+        const li = document.createElement('li');
+        li.textContent = 'Taba Squishy • ' + new Date(s.time).toLocaleString();
+        inventoryList.appendChild(li);
+      });
+    }
+
+    function playWithSquishy(){
+      if(!currentSquishy){ setStatus('Make a squishy first.'); return; }
+      wobble = 1.0; // trigger wobble animation
+      setStatus('Playing with the taba squishy.');
+    }
+
+    // Multiplayer
+    function connectWS(){
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        setStatus('Connected. Matching...');
+        sendWS({ type:'join' });
+      };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if(msg.type === 'welcome'){ playerId = msg.playerId; }
+        if(msg.type === 'matched'){
+          roomId = msg.roomId;
+          setStatus('Matched vs Player ' + (msg.opponentId === playerId ? '2' : msg.opponentId));
+          resetSteps();
+        }
+        if(msg.type === 'result'){
+          const { winner, coinsUpdate, tie } = msg;
+          if(tie){
+            setStatus('Tie. No coins awarded.');
+          } else if(winner === playerId){
+            setStatus('AI: I think player 1 taba squishy is better. You win +5 coins.');
+          } else {
+            setStatus('AI: I think player 1 taba squishy is better. Opponent wins +5 coins.');
+          }
+          updateCoins(coinsUpdate[playerId] || coins);
+          if((coinsUpdate[playerId]||0) >= 20){
+            setStatus('You reached 20 coins first. You win!');
+          }
+        }
+      };
+      ws.onclose = () => setStatus('Disconnected.');
+    }
+
+    function sendWS(obj){
+      if(ws && ws.readyState === 1){
+        ws.send(JSON.stringify(obj));
+      }
+    }
+
+    // UI wiring
+    btnSolo.onclick = () => {
+      mode = 'Solo';
+      modeText.textContent = mode;
+      menu.classList.add('hidden');
+      hud.classList.remove('hidden');
+      updateCoins(0);
+      resetSteps();
+    };
+    btnMulti.onclick = () => {
+      mode = 'Multiplayer';
+      modeText.textContent = mode;
+      menu.classList.add('hidden');
+      hud.classList.remove('hidden');
+      updateCoins(0);
+      resetSteps();
+      connectWS();
+    };
+
+    stepPaint.onclick = paintToeBeans;
+    stepDry.onclick = leaveToDry;
+    stepMix.onclick = mixLiquids;
+    stepPour.onclick = pourIntoMold;
+    stepSave.onclick = saveSquishy;
+    playWithBtn.onclick = playWithSquishy;
+    newRoundBtn.onclick = () => { resetSteps(); newRoundBtn.classList.add('hidden'); }
+
+    // Render loop
+    function render(t){
+      t *= 0.001;
+      if(resizeRendererToDisplaySize(renderer)){
+        const canvas = renderer.domElement;
+        camera.aspect = canvas.clientWidth / canvas.clientHeight;
+        camera.updateProjectionMatrix();
+      }
+      controls.update();
+      // wobble the current squishy
+      if(squishyGroup.children.length){
+        const g = squishyGroup.children[0];
+        if(wobble > 0){
+          const s = 1 + Math.sin(t*8) * wobble * 0.1;
+          g.scale.set(s, 1, s);
+          wobble *= 0.96;
+          if(wobble < 0.01) wobble = 0;
+        } else {
+          g.scale.set(1,1,1);
+        }
+      }
+      renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+
+    // Fit canvas
+    function fit(){
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', fit);
+    fit();
+  </script>
+</body>
+</html>
