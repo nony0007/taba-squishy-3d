@@ -14,6 +14,7 @@ body{
   justify-content:center;
   gap:16px;
   background:radial-gradient(80% 80% at 50% 50%,#1f1f2e,#0e0e12);
+  z-index:10;              /* <-- keep UI above canvas */
 }
 #menu h1{
   margin:0 0 12px 0;
@@ -32,9 +33,8 @@ body{
 #menu button:hover,#steps button:hover,#actions button:hover{
   filter:brightness(1.15);
 }
-.hidden{
-  display:none;
-}
+.hidden{display:none}
+
 #hud{
   position:fixed;
   top:8px;
@@ -43,6 +43,7 @@ body{
   display:flex;
   gap:16px;
   align-items:flex-start;
+  z-index:10;             /* <-- keep UI above canvas */
 }
 #modeLabel,#coins{
   background:#1b1b26;
@@ -75,9 +76,8 @@ body{
   position:fixed;
   inset:0;
   display:block;
+  z-index:0;              /* <-- canvas under UI */
 }
 
-/* Fix: ensure HUD stays hidden until activated */
-#hud.hidden{
-  display:none !important;
-}
+/* Ensure HUD can be hidden despite its display:flex */
+#hud.hidden{display:none !important;}
