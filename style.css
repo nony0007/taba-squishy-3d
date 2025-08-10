@@ -1,13 +1,83 @@
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#f1f1f1;background:#0e0e12}
-#menu{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:radial-gradient(80% 80% at 50% 50%,#1f1f2e,#0e0e12)}
-#menu h1{margin:0 0 12px 0;font-size:42px;letter-spacing:1px}
-#menu button,#steps button,#actions button{padding:10px 14px;border:0;border-radius:12px;background:#2b2b3f;color:#fff;font-weight:600;cursor:pointer}
-#menu button:hover,#steps button:hover,#actions button:hover{filter:brightness(1.15)}
-.hidden{display:none}
-#hud{position:fixed;top:8px;left:8px;right:8px;display:flex;gap:16px;align-items:flex-start}
-#modeLabel,#coins{background:#1b1b26;border:1px solid #333;padding:8px 12px;border-radius:10px}
-#steps{display:flex;gap:8px;flex-wrap:wrap}
-#status{min-height:24px;margin-top:6px}
-#inventoryWrap{background:#161621;border:1px solid #333;padding:8px;border-radius:10px;max-height:40vh;overflow:auto}
-#inventory{margin:6px 0 0 16px;padding:0}
-#game{position:fixed;inset:0;display:block}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  color:#f1f1f1;
+  background:#0e0e12;
+}
+#menu{
+  position:fixed;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  background:radial-gradient(80% 80% at 50% 50%,#1f1f2e,#0e0e12);
+}
+#menu h1{
+  margin:0 0 12px 0;
+  font-size:42px;
+  letter-spacing:1px;
+}
+#menu button,#steps button,#actions button{
+  padding:10px 14px;
+  border:0;
+  border-radius:12px;
+  background:#2b2b3f;
+  color:#fff;
+  font-weight:600;
+  cursor:pointer;
+}
+#menu button:hover,#steps button:hover,#actions button:hover{
+  filter:brightness(1.15);
+}
+.hidden{
+  display:none;
+}
+#hud{
+  position:fixed;
+  top:8px;
+  left:8px;
+  right:8px;
+  display:flex;
+  gap:16px;
+  align-items:flex-start;
+}
+#modeLabel,#coins{
+  background:#1b1b26;
+  border:1px solid #333;
+  padding:8px 12px;
+  border-radius:10px;
+}
+#steps{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+#status{
+  min-height:24px;
+  margin-top:6px;
+}
+#inventoryWrap{
+  background:#161621;
+  border:1px solid #333;
+  padding:8px;
+  border-radius:10px;
+  max-height:40vh;
+  overflow:auto;
+}
+#inventory{
+  margin:6px 0 0 16px;
+  padding:0;
+}
+#game{
+  position:fixed;
+  inset:0;
+  display:block;
+}
+
+/* Fix: ensure HUD stays hidden until activated */
+#hud.hidden{
+  display:none !important;
+}
